@@ -23,7 +23,7 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
   async signup(signupData: SignupDto) {
-    const { email, password, name } = signupData;
+    const { email, password, name, phone } = signupData;
     const emailInUse = await this.UserModel.findOne({ email });
 
     if (emailInUse) {
@@ -33,6 +33,7 @@ export class AuthService {
 
     await this.UserModel.create({
       name,
+      phone,
       email,
       password: hashedPassword,
     });
