@@ -13,6 +13,10 @@ import { LoginDto } from './dtos/login.dto';
 import { JwtService } from '@nestjs/jwt';
 import { RefreshToken } from './schemas/refresh-token.schema';
 import { v4 as uuidv4 } from 'uuid';
+import { nanoid } from 'nanoid';
+import { ForgotPasswordDto } from './dtos/forgot-password.dto';
+import { ResetToken } from './schemas/reset-token.schema';
+import { MailService } from 'src/services/mail.service';
 
 @Injectable()
 export class AuthService {
@@ -21,6 +25,9 @@ export class AuthService {
     @InjectModel(RefreshToken.name)
     private RefreshTokenModel: Model<RefreshToken>,
     private jwtService: JwtService,
+    @InjectModel(ResetToken.name)
+    private ResetTokenModel: Model<ResetToken>,
+    private mailService: MailService,
   ) {}
   async signup(signupData: SignupDto) {
     const { email, password, name, phone } = signupData;
@@ -115,6 +122,47 @@ export class AuthService {
     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedNewPassword;
 
+    await user.save();
+
+    return { message: 'Password changed' };
+  }
+
+  async forgotPassword({ email }: ForgotPasswordDto) {
+    const user = await this.UserModel.findOne({ email });
+    const expiryDate = new Date();
+    expiryDate.setHours(expiryDate.getHours() + 1);
+
+    if (user) {
+      const resetToken = nanoid(64);
+
+      await this.ResetTokenModel.create({
+        token: resetToken,
+        userId: user._id,
+        expiryDate,
+      });
+      this.mailService.sendPasswordResetEmail(email, resetToken);
+    }
+
+    return { message: 'If this user exists, they will receive an email' };
+  }
+
+  async resetPassword(newPassword: string, resetToken: string) {
+    const token = await this.ResetTokenModel.findOneAndDelete({
+      token: resetToken,
+      expiryDate: { $gte: new Date() },
+    });
+
+    if (!token) {
+      throw new UnauthorizedException('InvalidLink');
+    }
+
+    const user = await this.UserModel.findById(token.userId);
+
+    if (!user) {
+      throw new NotFoundException('Cannot find user');
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
 
     return { message: 'Password changed' };
